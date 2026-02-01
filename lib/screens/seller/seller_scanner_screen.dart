@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:qr_code_scanner/qr_code_scanner.dart';
+import 'package:mobile_scanner/mobile_scanner.dart';
 import '../../models/service_model.dart';
 import '../../services/api_service.dart';
 
@@ -11,12 +11,12 @@ class SellerScannerScreen extends StatefulWidget {
 }
 
 class _SellerScannerScreenState extends State<SellerScannerScreen> {
-  final GlobalKey qrKey = GlobalKey(debugLabel: 'QR');
   final ApiService _apiService = ApiService();
-  QRViewController? controller;
+  final MobileScannerController controller = MobileScannerController();
   String? scannedCode;
   List<Service>? services;
   bool isLoading = false;
+  bool isProcessing = false;
 
   @override
   void initState() {
@@ -44,21 +44,27 @@ class _SellerScannerScreenState extends State<SellerScannerScreen> {
 
   @override
   void dispose() {
-    controller?.dispose();
+    controller.dispose();
     super.dispose();
   }
 
-  void _onQRViewCreated(QRViewController controller) {
-    this.controller = controller;
-    controller.scannedDataStream.listen((scanData) {
-      if (scannedCode == null) {
-        setState(() {
-          scannedCode = scanData.code;
-        });
-        controller.pauseCamera();
-        _showServiceSelectionDialog();
-      }
-    });
+  void _onDetect(BarcodeCapture capture) {
+    if (isProcessing) return;
+
+    final List<Barcode> barcodes = capture.barcodes;
+    if (barcodes.isEmpty) return;
+
+    final String? code = barcodes.first.rawValue;
+    if (code == null || code.isEmpty) return;
+
+    if (scannedCode == null) {
+      setState(() {
+        scannedCode = code;
+        isProcessing = true;
+      });
+      controller.stop();
+      _showServiceSelectionDialog();
+    }
   }
 
   Future<void> _showServiceSelectionDialog() async {
@@ -71,8 +77,9 @@ class _SellerScannerScreenState extends State<SellerScannerScreen> {
       );
       setState(() {
         scannedCode = null;
+        isProcessing = false;
       });
-      controller?.resumeCamera();
+      controller.start();
       return;
     }
 
@@ -108,8 +115,9 @@ class _SellerScannerScreenState extends State<SellerScannerScreen> {
     } else {
       setState(() {
         scannedCode = null;
+        isProcessing = false;
       });
-      controller?.resumeCamera();
+      controller.start();
     }
   }
 
@@ -144,8 +152,9 @@ class _SellerScannerScreenState extends State<SellerScannerScreen> {
         setState(() {
           scannedCode = null;
           isLoading = false;
+          isProcessing = false;
         });
-        controller?.resumeCamera();
+        controller.start();
       }
     }
   }
@@ -159,7 +168,13 @@ class _SellerScannerScreenState extends State<SellerScannerScreen> {
           IconButton(
             icon: const Icon(Icons.flash_on),
             onPressed: () {
-              controller?.toggleFlash();
+              controller.toggleTorch();
+            },
+          ),
+          IconButton(
+            icon: const Icon(Icons.flip_camera_ios),
+            onPressed: () {
+              controller.switchCamera();
             },
           ),
         ],
@@ -168,16 +183,9 @@ class _SellerScannerScreenState extends State<SellerScannerScreen> {
         children: [
           Expanded(
             flex: 5,
-            child: QRView(
-              key: qrKey,
-              onQRViewCreated: _onQRViewCreated,
-              overlay: QrScannerOverlayShape(
-                borderColor: Colors.blue,
-                borderRadius: 10,
-                borderLength: 30,
-                borderWidth: 10,
-                cutOutSize: 300,
-              ),
+            child: MobileScanner(
+              controller: controller,
+              onDetect: _onDetect,
             ),
           ),
           Expanded(
